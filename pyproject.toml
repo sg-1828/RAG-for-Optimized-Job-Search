@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "rag-search-service"
+version = "0.1.0"
+description = "RAG-based job & resume search service"
+authors = ["Your Team"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.115.0"
+uvicorn = "^0.32.0"
+pydantic = "^2.8.0"
+pydantic-settings = "^2.0.0"
+numpy = "^2.1.0"
+paramiko = "^3.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+httpx = "^0.27.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

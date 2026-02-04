@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rag-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+  # FastAPI Backend Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: rag-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Core Service Config
+      - ENVIRONMENT=prod
+      - API_PREFIX=/api/v1
+      - VECTOR_TOP_K=20
+      
+      # Qdrant Configuration
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      
+      # Embedding Configuration (Ollama - default)
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-ollama}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-768}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-all-minilm:16-v2}
+      
+      # Agent Configuration (Required for search) - Using OpenAI by default for better JSON parsing
+      - AGENT_ENABLED=${AGENT_ENABLED:-true}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE:-0.3}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-500}
+      - LLM_MODEL=${LLM_MODEL:-gpt-3.5-turbo}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      
+      # Ollama LLM (optional - if you prefer local models)
+      - OLLAMA_LLM_MODEL=${OLLAMA_LLM_MODEL:-llama2}
+      
+      # Azure OpenAI (optional - if using Azure instead)
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rag-network
+    volumes:
+      - ./logs:/app/logs  # Optional: for log persistence
+
+  # Streamlit UI Service
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: rag-ui
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://api:8000/api/v1
+      - UPLOAD=${UPLOAD:-local}
+      # EC2 Configuration (if using remote upload)
+      - EC2_HOST=${EC2_HOST}
+      - EC2_USERNAME=${EC2_USERNAME}
+      - EC2_PORT=${EC2_PORT:-22}
+      - EC2_KEY_PATH=${EC2_KEY_PATH}
+      - EC2_PASSWORD=${EC2_PASSWORD}
+      - EC2_RESUME_FOLDER=${EC2_RESUME_FOLDER:-/home/ubuntu/resumes}
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+  # Ollama Service (optional - for local embeddings, or LLM if LLM_PROVIDER=ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - ollama  # Only start if explicitly requested or if using Ollama for embeddings/LLM
+
+volumes:
+  qdrant_storage:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  rag-network:
+    driver: bridge
+

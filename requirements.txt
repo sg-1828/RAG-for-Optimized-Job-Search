@@ -1,0 +1,39 @@
+# API framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.20  # Required for file uploads
+
+# Data & models
+pydantic>=2.8.0
+pydantic-settings>=2.0.0
+numpy>=2.1.0
+
+# Vector DB (Qdrant)
+qdrant-client>=1.9.0
+
+# HTTP client
+requests>=2.32.0
+
+# SSH/EC2 connection
+paramiko>=3.0.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# PDF & DOCX parsing
+pypdf>=5.0.0
+python-docx>=1.1.0
+
+# Streamlit UI
+streamlit>=1.37.0
+
+# Testing
+pytest>=8.3.0
+httpx>=0.27.0
+
+# Text processing & search
+symspellpy>=6.7.0
+
+# LLM client (for agent features - optional)
+# Note: OpenAI SDK is optional - we use requests for flexibility
+# If using OpenAI SDK instead, install: openai>=1.0.0
