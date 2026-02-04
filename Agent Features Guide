@@ -1,0 +1,399 @@
+# Agent Features Guide
+
+## Overview
+
+The agent layer provides intelligent query interpretation and rewriting capabilities for the RAG search system. **Agent features are required** for all search functionality - they enable natural language query understanding while maintaining the fast, reliable retrieval pipeline.
+
+## Features
+
+1. **Query Interpretation**: Automatically extracts structured filters from natural language queries
+2. **Query Rewriting**: Improves query quality for better semantic search
+3. **Result Explanation**: Provides AI-generated explanations of why results matched
+
+## Architecture
+
+```
+┌─────────────────────────────────────┐
+│   Agent Layer (Required)            │
+│   - Query interpretation            │
+│   - Filter extraction               │
+│   - Query rewriting                 │
+│   - Result explanation              │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│   RAG Pipeline                      │
+│   - Vector search (Qdrant)          │
+│   - BM25 keyword search             │
+│   - Hybrid scoring                  │
+│   - Filtering                       │
+└─────────────────────────────────────┘
+```
+
+## Configuration
+
+### Environment Variables
+
+#### Enable Agent Features (Required)
+```bash
+AGENT_ENABLED=true
+```
+
+**Note**: Agent features are **required** for search functionality. Search endpoints will return 503 if agent is not enabled.
+
+#### LLM Provider Options
+
+**Option 1: OpenAI**
+```bash
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-3.5-turbo  # or gpt-4
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1  # optional, defaults to OpenAI
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+**Option 2: Azure OpenAI**
+```bash
+LLM_PROVIDER=azure
+LLM_MODEL=your-deployment-name  # e.g., gpt-35-turbo
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+**Option 3: Ollama (Local)**
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_LLM_MODEL=llama2  # or mistral, codellama, etc.
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+### Complete .env Example
+```bash
+# Core service config
+ENVIRONMENT=dev
+VECTOR_TOP_K=20
+API_PREFIX=/api/v1
+
+# Qdrant config
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+
+# Embedding config
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_DIM=768
+
+# Agent config (OpenAI example)
+AGENT_ENABLED=true
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-3.5-turbo
+OPENAI_API_KEY=sk-your-key-here
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+## API Endpoints
+
+### 1. Job Search
+
+**Endpoint**: `POST /api/v1/search/jobs`
+
+**Request**:
+```json
+{
+  "query": "senior python developer in NYC with 5+ years experience",
+  "useAgent": true,
+  "page": 1,
+  "pageSize": 10,
+  "includeDebug": true,
+  "includeExplanation": true
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "jobId": "job_1",
+      "title": "Senior Backend Engineer",
+      "company": "FinTech Corp",
+      "location": "NYC",
+      "skills": ["python", "aws"],
+      "score": 0.92,
+      "highlights": ["We are seeking a senior backend engineer..."]
+    }
+  ],
+  "totalCount": 1,
+  "page": 1,
+  "pageSize": 10,
+  "debug": {
+    "originalQuery": "senior python developer in NYC with 5+ years experience",
+    "interpretedQuery": "senior python developer",
+    "filtersExtracted": true,
+    "agentEnabled": true,
+    "interpretation": {
+      "location": ["NYC"],
+      "skills": ["python"],
+      "minExperienceYears": 5,
+      "confidence": 0.9
+    },
+    "explanation": "These results match because they include senior-level Python developer positions in NYC with the required experience level."
+  }
+}
+```
+
+### 2. Resume Search
+
+**Endpoint**: `POST /api/v1/search/resumes`
+
+**Request**:
+```json
+{
+  "query": "python developer with AWS experience and 5+ years",
+  "useAgent": true,
+  "page": 1,
+  "pageSize": 10,
+  "includeExplanation": true
+}
+```
+
+### 3. Query Interpretation (Standalone)
+
+**Endpoint**: `POST /api/v1/search/interpret`
+
+**Request**:
+```json
+{
+  "query": "remote backend engineer with docker experience",
+  "search_type": "jobs"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "originalQuery": "remote backend engineer with docker experience",
+  "interpreted": {
+    "query": "backend engineer docker",
+    "location": ["Remote"],
+    "skills": ["docker"],
+    "jobFamily": ["Engineering"],
+    "confidence": 0.85
+  }
+}
+```
+
+## Usage Examples
+
+### cURL Examples
+
+**Job Search**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/jobs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "senior python developer in NYC with 5+ years",
+    "useAgent": true,
+    "includeExplanation": true
+  }'
+```
+
+**Query Interpretation Only**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/interpret?query=remote%20backend%20engineer&search_type=jobs"
+```
+
+### Python Example
+
+```python
+import requests
+
+# Search with natural language
+response = requests.post(
+    "http://localhost:8000/api/v1/search/jobs",
+    json={
+        "query": "data scientist with machine learning experience",
+        "useAgent": True,
+        "includeExplanation": True,
+        "page": 1,
+        "pageSize": 10
+    }
+)
+
+data = response.json()
+print(f"Found {data['totalCount']} results")
+print(f"Explanation: {data['debug']['explanation']}")
+for result in data['results']:
+    print(f"- {result['title']} at {result['company']}")
+```
+
+## Natural Language Query Examples
+
+The agent can understand various natural language patterns:
+
+### Job Search Queries
+- "senior python developer in NYC with 5+ years"
+- "remote backend engineer with AWS experience"
+- "data scientist with machine learning skills in SF"
+- "junior frontend developer react typescript"
+- "engineering manager with 10 years experience"
+
+### Resume Search Queries
+- "python developer with 5+ years experience"
+- "senior engineer AWS Docker Kubernetes"
+- "data scientist machine learning background"
+- "backend developer in NYC or remote"
+
+## Natural Language Search
+
+All search endpoints use agent capabilities for intelligent query interpretation. The agent automatically:
+- Extracts filters from natural language queries
+- Rewrites queries for better semantic search
+- Provides explanations (optional)
+
+**Example Query**:
+```json
+{
+  "query": "senior python developer in NYC with 5+ years experience",
+  "useAgent": true,
+  "includeExplanation": true
+}
+```
+
+The agent extracts:
+- Location: NYC
+- Skills: python
+- Experience: 5+ years
+- Job family: Engineering (inferred)
+
+## Error Handling
+
+If agent features are disabled or LLM is unavailable:
+- Search endpoints return **503 Service Unavailable** with error message
+- Must configure agent (set `AGENT_ENABLED=true` and LLM provider) for search to work
+- System will not function without agent configuration
+
+## Cost Considerations
+
+### LLM API Costs
+
+**OpenAI GPT-3.5-turbo** (estimated):
+- Query interpretation: ~100-200 tokens/request
+- Query rewriting: ~50-100 tokens/request
+- Result explanation: ~150-250 tokens/request
+- **Cost**: ~$0.0001-0.0005 per search (depends on usage)
+
+**Azure OpenAI**: Similar pricing to OpenAI
+
+**Ollama (Local)**: Free but requires local GPU/CPU resources
+
+### Optimization Tips
+
+1. **Cache interpretations**: Consider caching common query interpretations
+2. **Disable explanation by default**: Only enable when needed
+3. **Use smaller models**: GPT-3.5-turbo is usually sufficient
+4. **Batch requests**: Process multiple queries together if possible
+
+## Integration
+
+All search endpoints require agent features. The system uses natural language queries exclusively:
+
+```python
+# Natural language search with automatic filter extraction
+response = requests.post(
+    "http://localhost:8000/api/v1/search/jobs",
+    json={
+        "query": "senior python developer in NYC with 5+ years experience",
+        "useAgent": True,
+        "includeExplanation": True
+    }
+)
+```
+
+The agent automatically extracts and applies filters, so you don't need to specify them explicitly.
+
+## Testing
+
+### Test Agent Features
+
+```bash
+# Test query interpretation
+curl -X POST "http://localhost:8000/api/v1/search/interpret?query=senior%20python%20developer%20in%20NYC&search_type=jobs"
+
+# Test agent search
+curl -X POST "http://localhost:8000/api/v1/search/jobs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "remote backend engineer",
+    "useAgent": true,
+    "includeDebug": true
+  }'
+```
+
+### Verify Agent Status
+
+Check if agent is enabled:
+```python
+from rag_service.core.query_agent import get_query_agent
+
+agent = get_query_agent()
+print(f"Agent enabled: {agent.is_enabled()}")
+```
+
+## Troubleshooting
+
+### Agent Not Working
+
+1. **Check environment variables**:
+   ```bash
+   echo $AGENT_ENABLED
+   echo $LLM_PROVIDER
+   echo $OPENAI_API_KEY  # or AZURE_OPENAI_API_KEY
+   ```
+
+2. **Verify LLM provider access**:
+   - Test OpenAI API key
+   - Check Azure endpoint accessibility
+   - Verify Ollama is running (if using local)
+
+3. **Check logs**: Look for LLM API errors in application logs
+
+### Common Issues
+
+**Issue**: "Agent features are not enabled"
+- **Solution**: Set `AGENT_ENABLED=true` and configure LLM provider
+
+**Issue**: "503 Service Unavailable"
+- **Solution**: Verify LLM provider configuration and API credentials
+
+**Issue**: Slow responses
+- **Solution**: This is expected with LLM calls. Consider:
+  - Using faster models (GPT-3.5-turbo vs GPT-4)
+  - Disabling explanation for faster responses
+  - Using local Ollama for no API latency
+
+## Next Steps
+
+1. **Configure agent (required)**: Set up environment variables - see `AGENT_CONFIGURATION.md`
+2. **Test queries**: Try natural language queries
+3. **Monitor costs**: Track LLM API usage
+4. **Optimize**: Adjust model, temperature, and max_tokens as needed
+
+**Important**: Agent configuration is required before the service can handle search requests.
+
+## Additional Resources
+
+- See `AGENT_CONFIGURATION.md` for detailed configuration requirements
+- See `RESUME_SEARCH_GUIDE.md` for employer workflow guide
+- See `AGENT_VS_CURRENT_ANALYSIS.md` for architectural decisions
+- See `IMPROVEMENTS_SUMMARY.md` for recent improvements
+- See `README.md` for general service documentation
+
